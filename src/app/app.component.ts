@@ -166,19 +166,63 @@ export class AppComponent {
 
   // --- Output Actions ---
   copyToClipboard(): void {
+    if (!this.resultData) {
+      this.errorMessage = 'Nothing to copy.';
+      return;
+    }
+
     this.isLoading = true;
+    this.resetError();
 
-    navigator.clipboard.writeText(this.resultData).then(() => {
-      this.statusMessage = 'Result successfully copied to clipboard! ';
+    const tryAsyncClipboard = async (text: string): Promise<boolean> => {
+      // Works only in secure contexts (HTTPS or http://localhost)
+      if (typeof navigator !== 'undefined' && window.isSecureContext && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      return false;
+    };
 
-      setTimeout(() => {
+    const tryFallbackExecCommand = (text: string): boolean => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        ta.style.pointerEvents = 'none';
+        document.body.appendChild(ta);
+
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length); // iOS
+
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch {
+        return false;
+      }
+    };
+
+    (async () => {
+      try {
+        const ok = (await tryAsyncClipboard(this.resultData)) || tryFallbackExecCommand(this.resultData);
+
+        if (ok) {
+          this.statusMessage = 'Result successfully copied to clipboard!';
+          setTimeout(() => {
+            this.isLoading = false;
+            this.analyzeInput();
+          }, 1000);
+        } else {
+          throw new Error('Copy not supported in this environment.');
+        }
+      } catch (err: any) {
+        this.errorMessage = 'Could not copy text: ' + (err?.message || err);
         this.isLoading = false;
-        this.analyzeInput();
-      }, 1000);
-    }).catch(err => {
-      this.errorMessage = 'Could not copy text: ' + err;
-      this.isLoading = false;
-    });
+      }
+    })();
   }
 
   downloadFile(): void {
